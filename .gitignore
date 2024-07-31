@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual Environment
+venv/
+**/.env
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+
+# Data
+data/raw/
+data/processed/
+
+# Notebooks
+.ipynb_checkpoints
+
+# Secrets
+config/.env
+
+# Testing
+.pytest_cache/
+
+# Build
+dist/
+build/
+*.egg-info/
