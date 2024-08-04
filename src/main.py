@@ -14,6 +14,12 @@ import logging
 from src.agents.pkm_agent import PKMAgent
 from src.workflows.research_workflow import ResearchWorkflow
 from src.utils.data_utils import download_voice_message, transcribe_audio
+import asyncio
+from aiohttp import web
+
+# Add the project root directory to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(project_root)
 
 # Load environment variables
 load_dotenv(dotenv_path="config/.env")
@@ -29,7 +35,7 @@ tracer = ConsoleCallbackHandler()
 
 # Initialize PKM Agent and Research Workflow
 research_workflow = ResearchWorkflow()
-pkm_agent = research_workflow.pkm_agent  # This ensures the workflow is set correctly
+pkm_agent = research_workflow.pkm_agent
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Hi! I'm your AI research assistant. How can I help you today?")
@@ -67,33 +73,43 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(error_message)
         logger.error(f"Error processing voice message for user {user_id}: {str(e)}", exc_info=True)
 
-async def webhook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle incoming webhook updates."""
-    if update.message:
-        if update.message.text:
-            await handle_message(update, context)
-        elif update.message.voice:
-            await handle_voice(update, context)
+async def handle_webhook(request):
+    update = await request.json()
+    await application.process_update(Update.de_json(update, application.bot))
+    return web.Response(text="OK")
 
-def main() -> None:
+async def start_webhook(app, webhook_path):
+    await application.bot.set_webhook(url=f"{os.getenv('WEBHOOK_URL')}{webhook_path}")
+    return app
+
+async def run_bot():
+    global application
+    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    webhook_path = f"/{os.getenv('TELEGRAM_BOT_TOKEN')}"
+    port = int(os.environ.get("PORT", 10000))
+
+    app = web.Application()
+    app.router.add_post(webhook_path, handle_webhook)
+    
+    runner = web.AppRunner(await start_webhook(app, webhook_path))
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    
+    await site.start()
+    logger.info(f"Webhook set up on port {port}")
+
+    # Keep the bot running
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
     try:
-        application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
-
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        application.add_handler(MessageHandler(filters.VOICE, handle_voice))
-
-        # Get the port from the environment variable
-        port = int(os.environ.get("PORT", 5000))
-        
-        # Set up webhook
-        webhook_url = os.environ.get("WEBHOOK_URL")
-        if webhook_url:
-            application.run_webhook(listen="0.0.0.0", port=port, url_path="", webhook_url=webhook_url)
-            logger.info(f"Telegram bot started with webhook on port {port}")
-        else:
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
-            logger.info("Telegram bot started with polling")
+        asyncio.run(run_bot())
     except Exception as e:
         logger.error(f"Critical error in main function: {str(e)}", exc_info=True)
     finally:
