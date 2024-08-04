@@ -34,3 +34,7 @@ config/.env
 dist/
 build/
 *.egg-info/
+
+# Scripts
+*backup.py
+backup.py

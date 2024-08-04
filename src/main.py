@@ -17,7 +17,7 @@ from src.utils.data_utils import download_voice_message, transcribe_audio
 
 # Load environment variables
 load_dotenv(dotenv_path="config/.env")
-api_key=os.getenv('LANGSMITH_API_KEY')
+api_key = os.getenv('LANGSMITH_API_KEY')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -67,6 +67,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(error_message)
         logger.error(f"Error processing voice message for user {user_id}: {str(e)}", exc_info=True)
 
+async def webhook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle incoming webhook updates."""
+    if update.message:
+        if update.message.text:
+            await handle_message(update, context)
+        elif update.message.voice:
+            await handle_voice(update, context)
+
 def main() -> None:
     try:
         application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
@@ -75,8 +83,17 @@ def main() -> None:
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-        logger.info("Starting Telegram bot")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Get the port from the environment variable
+        port = int(os.environ.get("PORT", 5000))
+        
+        # Set up webhook
+        webhook_url = os.environ.get("WEBHOOK_URL")
+        if webhook_url:
+            application.run_webhook(listen="0.0.0.0", port=port, url_path="", webhook_url=webhook_url)
+            logger.info(f"Telegram bot started with webhook on port {port}")
+        else:
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            logger.info("Telegram bot started with polling")
     except Exception as e:
         logger.error(f"Critical error in main function: {str(e)}", exc_info=True)
     finally:
